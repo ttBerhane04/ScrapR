@@ -1,0 +1,25 @@
+Package: ScrapR
+Type: Package
+Title: Scrapes news articles from dr.dk and tv2.dk
+Version: 0.1.0
+Author: Thomas Tesfaye-Berhane
+Maintainer: The package maintainer <thomastb04@gmail.com>
+Description: Scrapes news articles from dr.dk and tv2.dk.
+    The package has options to automatically handle cookie consent promts and
+    to press "view more" by using RSelenium to interact with the webpage. 
+    
+    It is an experimental package and is not intended for production use.
+    Any usecase is at your own risk and should comply with the terms of use as stated by the respective websites (dr.dk and tv2.dk).
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Imports:
+    dplyr,
+    rvest,
+    RSelenium,
+    methods,
+    utils,
+    R6,
+    magrittr,
+    xml2
+RoxygenNote: 7.2.3

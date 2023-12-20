@@ -31,6 +31,7 @@
 #' @importFrom RSelenium rsDriver
 #' @importFrom rvest html_elements html_text html_attr
 #' @importFrom dplyr bind_rows if_else
+#' @importFrom lubridate is.Date
 #' @export
 
 web_driver <- R6::R6Class("web_driver",
@@ -57,7 +58,7 @@ web_driver <- R6::R6Class("web_driver",
                             show_more_class = NULL,
                             #' @field tv2 List of TV2 news categories and their URLs.
                             tv2 = list('krimi' = "https://nyheder.tv2.dk/krimi",
-                                       'politik = https://nyheder.tv2.dk/politik',
+                                       'politik' = 'https://nyheder.tv2.dk/politik',
                                        'samfund' = "https://nyheder.tv2.dk/samfund",
                                        'udland' = "https://nyheder.tv2.dk/udland",
                                        'business' = "https://nyheder.tv2.dk/business",
@@ -314,44 +315,13 @@ web_driver <- R6::R6Class("web_driver",
                                         print("Cookie consent prompt handled.")
                                         # end function
                                         return()
-                                      } else {
-                                        # if reject is TRUE, search for reject buttons and then click
-                                        if (isTRUE(reject)) {
-                                          for (i in 1:length(dom_children)) {
-                                            # Strings to identify cookie buttons
-                                            query_strings = c("reject","decline")
-                                            # Check if button contains reject or decline
-                                            if (grepl("reject", tolower(child_name_list[[i]]$id)) | grepl("reject", tolower(child_name_list[[i]]$class_))) {
-                                              dom_children[[i]]$highlightElement()
-                                              dom_children[[i]]$clickElement()
-                                              # message to user
-                                              print("Cookie consent prompt handled.")
-                                              # end function
-                                              return()
-                                            }
-                                          }
-                                        }
-                                        # if reject is FALSE, search for accept buttons and then click
-                                        else {
-                                          for (i in 1:length(dom_children)) {
-                                            # Strings to identify cookie buttons
-                                            query_strings = c("accept","allow",)
-                                            # Check if button contains accept or allow
-                                            if (grepl("accept", tolower(child_name_list[[i]]$id)) | grepl("accept", tolower(child_name_list[[i]]$class_))) {
-                                              dom_children[[i]]$highlightElement()
-                                              dom_children[[i]]$clickElement()
-                                            }
-                                          }
-                                        }
                                       }
                                     } else {
                                       # if reject is TRUE, search for reject buttons and then click
                                       if (isTRUE(reject)) {
                                         for (i in 1:length(dom_children)) {
-                                          # Strings to identify cookie buttons
-                                          query_strings = c("reject","decline")
                                           # Check if button contains reject or decline
-                                          if (grepl("reject", tolower(child_name_list[[i]]$id)) | grepl("reject", tolower(child_name_list[[i]]$class_))) {
+                                          if ( ( grepl("reject", tolower(child_name_list[[i]]$id)) | grepl("decline", tolower(child_name_list[[i]]$id)) ) | ( grepl("reject", tolower(child_name_list[[i]]$class_)) | grepl("decline", tolower(child_name_list[[i]]$class_)) ) ) {
                                             dom_children[[i]]$highlightElement()
                                             dom_children[[i]]$clickElement()
                                             # message to user
@@ -364,17 +334,14 @@ web_driver <- R6::R6Class("web_driver",
                                       # if reject is FALSE, search for accept buttons and then click
                                       else {
                                         for (i in 1:length(dom_children)) {
-                                          # Strings to identify cookie buttons
-                                          query_strings = c("accept","allow",)
                                           # Check if button contains accept or allow
-                                          if (grepl("accept", tolower(child_name_list[[i]]$id)) | grepl("accept", tolower(child_name_list[[i]]$class_))) {
+                                          if ( ( grepl("accept", tolower(child_name_list[[i]]$id)) | grepl("allow", tolower(child_name_list[[i]]$id))) | ( grepl("accept", tolower(child_name_list[[i]]$class_)) | grepl("allow", tolower(child_name_list[[i]]$class_)) ) ) {
                                             dom_children[[i]]$highlightElement()
                                             dom_children[[i]]$clickElement()
                                           }
                                         }
                                       }
                                     }
-
                                   }
                                 }
                                 # If using headless mode, click all buttons
@@ -382,10 +349,8 @@ web_driver <- R6::R6Class("web_driver",
                                   # if reject is TRUE, search for reject buttons and then click
                                   if (isTRUE(reject)) {
                                     for (i in 1:length(dom_children)) {
-                                      # Strings to identify cookie buttons
-                                      query_strings = c("reject","decline")
                                       # Check if button contains reject or decline
-                                      if (grepl("reject", tolower(child_name_list[[i]]$id)) | grepl("reject", tolower(child_name_list[[i]]$class_))) {
+                                      if ( ( grepl("reject", tolower(child_name_list[[i]]$id)) | grepl("decline", tolower(child_name_list[[i]]$id)) ) | ( grepl("reject", tolower(child_name_list[[i]]$class_)) | grepl("decline", tolower(child_name_list[[i]]$class_)) ) ) {
                                         dom_children[[i]]$highlightElement()
                                         dom_children[[i]]$clickElement()
                                         # message to user
@@ -398,10 +363,8 @@ web_driver <- R6::R6Class("web_driver",
                                   # if reject is FALSE, search for accept buttons and then click
                                   else {
                                     for (i in 1:length(dom_children)) {
-                                      # Strings to identify cookie buttons
-                                      query_strings = c("accept","allow",)
                                       # Check if button contains accept or allow
-                                      if (grepl("accept", tolower(child_name_list[[i]]$id)) | grepl("accept", tolower(child_name_list[[i]]$class_))) {
+                                      if ( ( grepl("accept", tolower(child_name_list[[i]]$id)) | grepl("allow", tolower(child_name_list[[i]]$id))) | ( grepl("accept", tolower(child_name_list[[i]]$class_)) | grepl("allow", tolower(child_name_list[[i]]$class_)) ) ) {
                                         dom_children[[i]]$highlightElement()
                                         dom_children[[i]]$clickElement()
                                       }
@@ -598,7 +561,7 @@ web_driver <- R6::R6Class("web_driver",
                                 cut_off_date = Sys.Date() - 14
                               } else {
                                 # Check if last_update is a date
-                                if (!is.Date(as.Date(last_update))) {
+                                if (!lubridate::is.Date(as.Date(last_update))) {
                                   stop("last_update must be a date in format 'YYYY-MM-DD'")
                                 } else {
                                   cut_off_date = as.Date(last_update)

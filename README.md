@@ -12,4 +12,4 @@ You can install the development version from GitHub with:
 
 ```r
 # install.packages("devtools")
-devtools::install_github("your_github_username/ScrapR")
+devtools::install_github("ttBerhane04/ScrapR")

@@ -101,8 +101,9 @@ web_driver <- R6::R6Class("web_driver",
                                 stop("RSelenium could not be started.")
                               }
 
-                              # assign server and client
+                              # assign server and client (and set timeout for pages to load)
                               self$client <- self$rD$client
+                              self$client$setTimeout(type = "page load", milliseconds = 10000)
                               self$server <- self$rD$server
                             },
 
@@ -213,6 +214,7 @@ web_driver <- R6::R6Class("web_driver",
                               self$go_to_url(self$dr[[category]])
 
                               if (isTRUE(handle_cookie)) {
+                                message("Handling cookie consent...")
                                 self$handle_cookie_consent()
                               }
                             },
@@ -232,6 +234,7 @@ web_driver <- R6::R6Class("web_driver",
                               self$go_to_url(self$tv2[[category]])
 
                               if (isTRUE(handle_cookie)) {
+                                message("Handling cookie consent...")
                                 self$handle_cookie_consent()
                               }
 
@@ -264,110 +267,90 @@ web_driver <- R6::R6Class("web_driver",
                             #' @return None, but prints a message indicating the action taken.
                             handle_cookie_consent = function(using = NULL, value = NULL, reject = FALSE, user_prompt = FALSE) {
 
-                              if (self$outlet == "dr") {
-                                using = "class name"
-                                value = "drCookieDialog"
-                              } else if (self$outlet == "tv2") {
-                                using = "class name"
-                                value = "banner-actions-container"
-                              }
-
                               # Check if using and value are provided
-                              if(is.null(using)){
-                                stop("using is not provided")
+                              if (!is.null(using) && !is.null(value)) {
+                                # Message user
+                                message("Working on cookie consent prompt with user defined values...")
+                              } else {
+                                # message user
+                                message("Working on cookie consent prompt...")
+
+                                # Check which outlet is being used and set using and value accordingly
+                                if (self$outlet == "dr") {
+                                  search_method = "class name"
+                                  search_value = "drCookieDialog"
+                                } else if (self$outlet == "tv2") {
+                                  search_method = "class name"
+                                  search_value = "banner-actions-container"
+                                  # search_method = "id"
+                                  # search_value = "onetrust-group-container"# onetrust-button-group
+                                }
                               }
 
-                              if(is.null(value)){
-                                stop("value is not provided")
-                              }
+                              # Set implicit and page load timeouts
+                              self$client$setTimeout(type = "page load", milliseconds = 3000)
+                              self$client$setTimeout(type = "implicit", milliseconds = 3000)
 
-                              # Retrieve page html
-                              self$get_html()
+                              # Engage cookie consent prompt with click
+                              div_elements = self$client$findElements(using = "css selector", value = "div[id *= 'one']")
+                              Sys.sleep(.5)
+                              div_elements[[1]]$clickElement()
 
-                              # Find cookie consent prompt
-                              cookie_dom = self$client$findElements(using, value)
+                              # Get button elements
+                              button_elements = self$client$findElements(using = "tag name", value = "button")
 
-                              # Check if cookie consent prompt is present
-                              if (length(cookie_dom) > 0) {
-                                dom_children = cookie_dom[[1]]$findChildElements(using = "tag name", value = "button")
+                              # if self$headless is TRUE
+                              if (isFALSE(user_prompt)) {
+                                # Set pattern to search for button based on reject argument
+                                pattern <- if (isTRUE(reject)) c("reject", "decline", "chosen") else c("accept", "all")
+
+                                for (element in button_elements) {
+                                  # convert id and class to lower case
+                                  id_lower <- tolower(element$getElementAttribute('id'))
+                                  class_lower <- tolower(element$getElementAttribute('class'))
+
+                                  # check if any of the pattern match the id or class
+                                  if (any(sapply(pattern, grepl, x = id_lower)) || any(sapply(pattern, grepl, x = class_lower))) {
+
+                                    # if match, click button and return TRUE
+                                    if (handle_button_click(element)) {
+                                      message("Cookie consent prompt handled.")
+                                      return()
+                                    }
+                                  }
+                                }
+                                message("No matching button found. Visit the website and inspect the cookie consent prompt to find the correct id or class.")
+                              # or else the user is prompted to select the correct button to handle cookie consent prompt
+                              } else {
 
                                 # Get button names
-                                child_name_list = list()
-                                for (i in 1:length(dom_children)) {
-                                  child_name_list[[i]] = list('id' = dom_children[[i]]$getElementAttribute('id'),
-                                                              'class_' = dom_children[[i]]$getElementAttribute('class'))
-                                }
+                                button_values <- lapply(button_elements, function(button) {
+                                  list(
+                                    id = button$getElementAttribute('id'),
+                                    class_ = button$getElementAttribute('class')
+                                  )
+                                })
 
-                                # If not using headless mode, prompt user which button to click
-                                if (self$headless == FALSE) {
-                                  # Check if buttons are found
-                                  for (i in 1:length(dom_children)) {
-                                    # if user_prompt is TRUE, prompt user to accept or reject
-                                    if (isTRUE(user_prompt)) {
-                                      # Prompt user if this is the correct button
-                                      print(paste0("Is this the correct button? (id: ", child_name_list[[i]][['id']], ", class: ", child_name_list[[i]][['class_']], ")"))
-                                      user_input = readline(prompt = "Enter y/n: ")
-                                      # If yes, click button
-                                      if (user_input == "y") {
-                                        dom_children[[i]]$highlightElement()
-                                        dom_children[[i]]$clickElement()
-                                        # message to user
-                                        print("Cookie consent prompt handled.")
-                                        # end function
-                                        return()
-                                      }
+                                # Iterate over buttons and prompt user to select the correct button
+                                for (i in 1:length(button_elements)) {
+
+                                  # Prompt user to select the correct button
+                                  message(paste0("Is this the correct button? (id: ", button_values[[i]]$id, ", class: ", button_values[[i]]$class_, ")"))
+
+                                  # Get user input
+                                  user_input <- readline(prompt = "Enter y/n: ")
+
+                                  # If user input is y, click button and break loop
+                                  if (tolower(user_input) == "y") {
+
+                                    # Click button
+                                    if (handle_button_click(button_elements[[i]])) {
+                                      # Message user and Break loop
+                                      message("Cookie consent prompt handled.")
+                                      break
                                     } else {
-                                      # if reject is TRUE, search for reject buttons and then click
-                                      if (isTRUE(reject)) {
-                                        for (i in 1:length(dom_children)) {
-                                          # Check if button contains reject or decline
-                                          if ( ( grepl("reject", tolower(child_name_list[[i]]$id)) | grepl("decline", tolower(child_name_list[[i]]$id)) ) | ( grepl("reject", tolower(child_name_list[[i]]$class_)) | grepl("decline", tolower(child_name_list[[i]]$class_)) ) ) {
-                                            dom_children[[i]]$highlightElement()
-                                            dom_children[[i]]$clickElement()
-                                            # message to user
-                                            print("Cookie consent prompt handled.")
-                                            # end function
-                                            return()
-                                          }
-                                        }
-                                      }
-                                      # if reject is FALSE, search for accept buttons and then click
-                                      else {
-                                        for (i in 1:length(dom_children)) {
-                                          # Check if button contains accept or allow
-                                          if ( ( grepl("accept", tolower(child_name_list[[i]]$id)) | grepl("allow", tolower(child_name_list[[i]]$id))) | ( grepl("accept", tolower(child_name_list[[i]]$class_)) | grepl("allow", tolower(child_name_list[[i]]$class_)) ) ) {
-                                            dom_children[[i]]$highlightElement()
-                                            dom_children[[i]]$clickElement()
-                                          }
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                                # If using headless mode, click all buttons
-                                else {
-                                  # if reject is TRUE, search for reject buttons and then click
-                                  if (isTRUE(reject)) {
-                                    for (i in 1:length(dom_children)) {
-                                      # Check if button contains reject or decline
-                                      if ( ( grepl("reject", tolower(child_name_list[[i]]$id)) | grepl("decline", tolower(child_name_list[[i]]$id)) ) | ( grepl("reject", tolower(child_name_list[[i]]$class_)) | grepl("decline", tolower(child_name_list[[i]]$class_)) ) ) {
-                                        dom_children[[i]]$highlightElement()
-                                        dom_children[[i]]$clickElement()
-                                        # message to user
-                                        print("Cookie consent prompt handled.")
-                                        # end function
-                                        return()
-                                      }
-                                    }
-                                  }
-                                  # if reject is FALSE, search for accept buttons and then click
-                                  else {
-                                    for (i in 1:length(dom_children)) {
-                                      # Check if button contains accept or allow
-                                      if ( ( grepl("accept", tolower(child_name_list[[i]]$id)) | grepl("allow", tolower(child_name_list[[i]]$id))) | ( grepl("accept", tolower(child_name_list[[i]]$class_)) | grepl("allow", tolower(child_name_list[[i]]$class_)) ) ) {
-                                        dom_children[[i]]$highlightElement()
-                                        dom_children[[i]]$clickElement()
-                                      }
+                                      # Message user
+                                      message("Cookie consent prompt not handled.\n Try the next button or inspect website")
                                     }
                                   }
                                 }
@@ -381,121 +364,86 @@ web_driver <- R6::R6Class("web_driver",
                             #' @return None, but sets internal fields related to the 'Show More' button if found.
                             locate_show_more_button = function() {
 
-                              # Find all buttons on page
-                              button_doms = self$client$findElements(using = "tag name", value = "button")
+                              # Set implicit and page load timeouts
+                              self$client$setTimeout(type = "page load", milliseconds = 3000)
+                              self$client$setTimeout(type = "implicit", milliseconds = 3000)
 
-                              # set query strings
-                              query_string = c('more', 'load', 'expan')
+                              # Engage cookie consent prompt with click
+                              div_elements = self$client$findElements(using = "css selector", value = "div[id *= 'one']")
+                              Sys.sleep(.5)
+                              div_elements[[1]]$clickElement()
 
-                              # First attempt to locate show more button using class attribute
-                              # retrieve button class attribute
-                              button_class = sapply(button_doms, function(x) x$getElementAttribute("class")) %>% unlist()
+                              # query page for button
+                              view_more_button = query_page_for_button(remDr = self$client, query_pattern = c("more", "load"), query_attr = "class")
 
-                              # if any button class is not empty, then search for class with words from query_string
-                              if (any(button_class != "")) {
-                                # print message to user
-                                print("Searching for show more button using class attribute.")
+                              # Validate buttons existential state of being
+                              if (isTRUE(view_more_button$click)) {
+                                # set attribute_type
+                                attr_type = view_more_button$button$attr
 
-                                # search for query_string in button_class
-                                matches = sapply(query_string, function(x) stringi::stri_detect_fixed(tolower(button_class), x))
+                                # if attribute_type is class set as class name
+                                if (attr_type == "class") {
+                                  attr_type = "class name"
+                                }
 
-                                # if any matches, then click button
-                                any_matches = apply(matches, 1, any) %>% which()
-
-                                # Iterate over matches if any were found
-                                if (length(any_matches) > 0) {
-                                  for (i in length(any_matches)) {
-                                    # get page length before clicking button
-                                    pre_length <- unlist(self$client$executeScript("return document.body.scrollHeight"))
-
-                                    ## Scroll to current bottom
-                                    self$client$executeScript("window.scrollTo(0,document.body.scrollHeight)")
-
-                                    # click button
-                                    button_doms[[any_matches[i]]]$highlightElement()
-                                    button_doms[[any_matches[i]]]$clickElement()
-                                    Sys.sleep(.3)
+                                # set attribute_value
+                                attr_value = view_more_button$button$value
 
 
-                                    ## Scroll to current bottom
-                                    self$client$executeScript("window.scrollTo(0,document.body.scrollHeight)")
+                                if (length(attr_value) > 0) {
 
-                                    # get page length after clicking button
-                                    post_length <- unlist(self$client$executeScript("return document.body.scrollHeight"))
+                                  # locate button
+                                  button_element = tryCatch(self$client$findElement(using = attr_type, value = attr_value), error = function(e) e)
 
-                                    if (post_length > pre_length) {
-                                      # if page length increased, then store button class
-                                      self$show_more_class = button_class[any_matches[i]]
-                                      # set self$show_more_button to TRUE
-                                      self$show_more_lgl = TRUE
-                                      # break loop
-                                      break
+                                  # Click button with handle_button_click() use it instead of query_page_for_button()
+                                  # for added functionality that engages website
+                                  outcome = tryCatch(handle_button_click(button_element), error = function(e) e)
+
+                                  if (inherits(outcome, "try-error")) {
+                                    button_element = tryCatch(self$client$findElement(using = attr_type, value = attr_value), error = function(e) e)
+
+                                    if (inherits(button_element, "try-error")) {
+                                      # prompt user to manually inspect page for button
+                                      stop("Error: Please inspect page for button")
                                     }
+
+                                    # if button is found, move button in view
+                                    button_element$getElementLocationInView()
+
+                                    # Engage page with click
+                                    div_element = self$client$findElement(using = "tag name", value = "div")
+                                    Sys.sleep(.1)
+                                    div_element$clickElement()
+
+                                    # click button with handle_button_click()
+                                    outcome = tryCatch(handle_button_click(button_element), error = function(e) e)
+
+                                    if (inherits(button_element, "try-error")) {
+                                      # prompt user to manually inspect page for button
+                                      stop("Error: Please inspect page for button")
+                                    }
+
+                                  }
+
+                                  if (isTRUE(outcome)) {
+                                    # Store button values and existance in public list
+                                    self$show_more_lgl <- TRUE
+
+                                    if (attr_type == "class name") {
+                                      self$show_more_class <- view_more_button$button$value
+                                    } else {
+                                      self$show_more_id <- view_more_button$button$value
+                                    }
+
+                                    # message user
+                                    message("Show more button found and clicked.")
+                                  } else {
+                                    message("Show more button found but not clicked.")
                                   }
                                 }
-                              }
-
-                              # Then if self$show_more_lgl is NULL attempt to locate show more button using id attribute
-                              if (is.null(self$show_more_lgl)) {
-                                # print message to user
-                                print("Searching for show more button using id attribute.")
-
-                                # Find all buttons on page
-                                button_doms = self$client$findElements(using = "tag name", value = "button")
-
-                                # retrieve button id attribute
-                                button_id = sapply(button_doms, function(x) x$getElementAttribute("id")) %>% unlist()
-
-                                if (any(button_id == "")) {
-                                  # search for query_string in button_class
-                                  matches = sapply(query_string, function(x) stringi::stri_detect_fixed(tolower(button_id), x))
-
-                                  # if any matches, then click button
-                                  any_matches = apply(matches, 1, any) %>% which()
-
-                                  # Print message to user about number of matches
-                                  print(paste0("Found ", length(any_matches), " matches."))
-
-                                  # Iterate over matches if any were found
-                                  if (length(any_matches) > 0) {
-
-                                    for (i in length(any_matches)) {
-                                      # get page length before clicking button
-                                      pre_length <- unlist(self$client$executeScript("return document.body.scrollHeight"))
-
-                                      ## Scroll to current bottom
-                                      self$client$executeScript("window.scrollTo(0,document.body.scrollHeight)")
-
-                                      # click button
-                                      button_doms[[any_matches[i]]]$highlightElement()
-                                      button_doms[[any_matches[i]]]$clickElement()
-                                      Sys.sleep(.3)
-
-                                      ## Scroll to current bottom
-                                      self$client$executeScript("window.scrollTo(0,document.body.scrollHeight)")
-
-                                      # get page length after clicking button
-                                      post_length <- unlist(self$client$executeScript("return document.body.scrollHeight"))
-
-                                      if (post_length > pre_length) {
-                                        # if page length increased, then store button class
-                                        self$show_more_id = button_id[any_matches[i]]
-                                        # set self$show_more_button to TRUE
-                                        self$show_more_lgl = TRUE
-                                        # break loop
-                                        break
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-
-                              if (isTRUE(self$show_more_lgl) & (!is.null(self$show_more_class) | !is.null(self$show_more_id))) {
-                                print("Found show more button")
                               } else {
-                                print("Could not find show more button")
-                                # Consider implementing a method that if no button is found,
-                                # prompts the user for a class or id to search for.
+                                # Give error and prompt user to inspect website
+                                stop("Error: No show more button found. Please inspect website.")
                               }
                             },
 
@@ -590,7 +538,6 @@ web_driver <- R6::R6Class("web_driver",
                                     rvest::html_elements(css = "div>span>span>span[class *= 'dre-teaser-meta__part']") %>%
                                     rvest::html_text()
 
-
                                   if (length(date_list) == 2) {
                                     dr_date = date_list[2]
                                   } else {
@@ -666,41 +613,33 @@ web_driver <- R6::R6Class("web_driver",
                               # if outlet is tv2 prompt user for a category
                               if (self$outlet == 'tv2') {
 
-                                # get page source
-                                self$get_html()
-
                                 # set tv2_source to page_source
-                                tv2_source = self$page_source
+                                tv2_source = self$get_html(do_return = TRUE)
 
                                 # get news elements
                                 tv2_news_elements = get_news_elements(outlet = 'tv2', page_source = tv2_source )
 
-                                # retrieve and format date from news elements to filter out previuse crawled articles
+                                # retrieve and format date from news elements to filter out previous crawled articles
                                 full_date_list = unlist(lapply(tv2_news_elements, function(x) {
                                   # tv2 - url
-                                  tv2_url = x %>%
+                                  tv2_date = x %>%
                                     rvest::html_elements(css = "a[class *= 'tc_teaser__link']") %>%
-                                    rvest::html_attr("href")
-
-                                  # tv2 - date
-                                  tv2_date = grab_date_from_url(tv2_url)
+                                    rvest::html_attr("href") %>%
+                                    grab_date_from_url(.)
 
                                   # if NA then set date to current date YYYY-MM-DD
                                   # This handles cases from tv2 play, where the date is not present in the html or URL
                                   if (is.na(tv2_date)) {
-                                    tv2_date = as.character(Sys.Date()) # Messy way to enforce a consistant format for dates
+                                    tv2_date = as.character(Sys.Date()) # Messy way to enforce a consistent format for dates
                                   }
 
                                   return(tv2_date)
 
                                 }))
 
-                                # message user about first list of dates retrieved with dates
-                                message(min(full_date_list))
-
-                                # Error in if (min(full_date_list) > cut_off_date) { :
-                                #  missing value where TRUE/FALSE needed
-                                # You need to handle NAs in your data. You can use na.rm = TRUE in min() or na.omit() on your data before calling min().
+                                # print full_date_list as vector - debugging purposes
+                                # print(full_date_list)
+                                # print(min(full_date_list))
 
                                 # if cut-off date is before the earliest article, then click show more button and re-evaluate
                                 if (min(full_date_list) > cut_off_date) {
@@ -708,72 +647,128 @@ web_driver <- R6::R6Class("web_driver",
                                   # Set date condition for while loop
                                   date_condition = min(full_date_list) > cut_off_date
 
+                                  # while-loop counter
+                                  counter = 0
+
                                   # while earliest article is before cut-off date keep clicking show more button
                                   while (date_condition) {
+
+                                    # increment counter
+                                    counter = counter + 1
 
                                     # if show more button is not set, then locate it
                                     if (is.null(self$show_more_lgl)) {
 
                                       # locate show more button
                                       self$locate_show_more_button()
-                                      # print message
-                                      message("Show more button located")
-                                    } else {
 
-                                      # if show more button is set, then click it
-                                      if (isTRUE(self$show_more_lgl)) {
+                                    # if show more button is set, then click it
+                                    } else if (isTRUE(self$show_more_lgl)) {
 
-                                        for (i in 1:2) {
+                                      for (i in 1:2) {
+                                        # Scroll down to 300 pixels
+                                        self$client$executeScript("window.scrollTo(0,300)")
 
-                                          # If show more button is set using class name, then click it
-                                          if (!is.null(self$show_more_class)) {
-                                            # print message
-                                            message("Clicking show more button")
-                                            click_button(remDr = self$client, button_class = self$show_more_class)
+                                        if (counter == 4) {
+                                          # refresh page
+                                          self$client$refresh()
+                                        }
 
-                                            # If show more button is set using id, then click it
-                                          } else if (!is.null(self$show_more_id)) {
-                                            click_button(remDr = self$client, button_id = self$show_more_id)
-                                          } else {
-                                            stop("No show more button found/n Please specify show more button class or id using set_show_more_button()")
+                                        # if counter is greater than 3 then sleep for 2 seconds and engage the page
+                                        if (counter == 3) {
+                                          div_load = self$client$findElement(using = 'css selector', value = "div[class *= 'tc_load']")
+                                          if (!is.null(div_load)) {
+                                            Sys.sleep(.2)
+                                            div_load$clickElement()
                                           }
+
+                                          Sys.sleep(2)
+
+                                          # Scroll down to 600 pixels
+                                          self$client$executeScript("window.scrollTo(0,600)")
+                                        }
+
+                                        # if show more button is set by class then locate it
+                                        if (!is.null(self$show_more_class)) {
+
+                                          # locate show more button and click it
+                                          view_more_button = suppressMessages(query_page_for_button(remDr = self$client, query_pattern = self$show_more_class, query_attr = "class"))
+                                          # if counter is greater than 3 then sleep for 2 seconds and engage the page
+                                          if (counter > 4) {
+                                            Sys.sleep(1)
+                                            element <- self$client$findElement(using = 'css', value = paste0("button[class *= '",self$show_more_class,"']" ))
+                                            Sys.sleep(runif(1, .1, .2))
+                                            element$getElementLocationInView()
+                                            Sys.sleep(runif(1, .1, .2))
+                                            self$client$mouseMoveToLocation(webElement = element)
+                                            # Sys.sleep(runif(1, .1, .2))
+                                            # self$client$executeScript("arguments[0].click();", list(element))
+                                          }
+
+                                        # if show more button is set by class then locate it
+                                        } else if (!is.null(self$show_more_id)) {
+
+                                          # locate show more button and click it
+                                          view_more_button = suppressMessages(query_page_for_button(remDr = self$client, query_pattern = self$show_more_id, query_attr = "id"))
+
+                                          # if counter is greater than 3 then sleep for 2 seconds and engage the page
+                                          if (counter > 4) {
+                                            Sys.sleep(1)
+                                            element <- self$client$findElement(using = 'css', value = paste0("button[class *= '",self$show_more_class,"']" ))
+                                            Sys.sleep(runif(1, .1, .2))
+                                            element$getElementLocationInView()
+                                            Sys.sleep(runif(1, .1, .2))
+                                            self$client$mouseMoveToLocation(webElement = element)
+                                            # Sys.sleep(runif(1, .1, .2))
+                                            # self$client$executeScript("arguments[0].click();", list(element))
+                                          }
+                                        } else {
+                                          stop("No show more button found/n Please specify show more button class or id using set_show_more_button()")
                                         }
                                       }
                                     }
 
-                                    # get page source
+                                    ## Scroll to current bottom
+                                    page_element = self$client$findElement(using = 'css selector', value = "body")
+                                    page_element$sendKeysToElement(list(key = "end"))
+                                    page_element$sendKeysToElement(list(key = "down_arrow"))
+
+                                    Sys.sleep(runif(1, .2, .4))
+
+                                    # get html
                                     self$get_html()
 
-                                    # set tv2_source to page_source
-                                    tv2_source = self$page_source
-
                                     # get news elements
-                                    tv2_news_elements = get_news_elements(outlet = 'tv2', page_source = tv2_source )
+                                    tv2_news_elements = get_news_elements(outlet = 'tv2', page_source = self$page_source)
 
                                     # update dates
                                     full_date_list = unlist(lapply(tv2_news_elements, function(x) {
+
                                       # tv2 - url
-                                      tv2_url = x %>%
+                                      tv2_date = x %>%
                                         rvest::html_elements(css = "a[class *= 'tc_teaser__link']") %>%
                                         rvest::html_attr("href")
 
-                                      # tv2 - date
-                                      tv2_date = grab_date_from_url(tv2_url)
+                                      tv2_date = tv2_date %>%
+                                        grab_date_from_url(.)
 
                                       # if NA then set date to current date YYYY-MM-DD
                                       if (is.na(tv2_date)) {
-                                        tv2_date = as.character(Sys.Date()) # Messy way to enforce a consistant format for dates
+                                        tv2_date = as.character(Sys.Date()) # Messy way to enforce a consistent format for dates
                                       }
 
                                       return(tv2_date)
 
                                     }))
 
-                                    # Den bliver ved med at finde den samme dato, så den går i loop
-                                    # 1. kør manuelt og tryk vis mere to gange og se om den giver nuværende løsning virker
-                                    #
-                                    print(min(full_date_list))
-                                    print(cut_off_date)
+                                    # print full_date_list as vector
+                                    #print(min(full_date_list))
+
+                                    # Message user about dates if counter is 4
+                                    if (counter %in% c(3,5,7,9)) {
+                                      message("Still working on getting news items according to cut-off date\n",paste0("Current earliest article date: ", min(full_date_list), "\nCut-off date: ", cut_off_date))
+                                    }
+
 
                                     # check if cut-off date is before the earliest article
                                     date_condition = min(full_date_list) > cut_off_date

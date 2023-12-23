@@ -19,7 +19,6 @@
 #' @importFrom magrittr %>%
 #' @importFrom rvest html_nodes
 #' @importFrom xml2 read_html
-#' @export
 
 
 get_news_elements = function(outlet = c('dr','tv2'), page_source = NULL) {
@@ -36,11 +35,11 @@ get_news_elements = function(outlet = c('dr','tv2'), page_source = NULL) {
   if (outlet == 'dr') {
     # get news elements from dr.dk
     news_elements = page_source %>%
-      rvest::html_nodes(xpath = "//div[contains(@class, 'dre-teaser-content')]")
+      rvest::html_elements(xpath = "//div[contains(@class, 'dre-teaser-content')]")
   } else if (outlet == 'tv2') {
     # get news elements from tv2.dk
     news_elements = page_source %>%
-      rvest::html_nodes(xpath = "//article[contains(@class, 'tc_teaser')]")
+      rvest::html_elements(xpath = "//article[contains(@class, 'tc_teaser')]")
   } else {
     stop("Error: outlet must be either 'dr' or 'tv2'")
   }

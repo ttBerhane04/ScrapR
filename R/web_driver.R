@@ -46,6 +46,8 @@ web_driver <- R6::R6Class("web_driver",
                             headless = NULL,
                             #' @field outlet Current news outlet being scraped.
                             outlet = NULL,
+                            #' @field topic Current topic being scraped.
+                            topic = NULL,
                             #' @field url_ Current URL navigated to.
                             url_ = NULL,
                             #' @field page_source HTML source of the current page.
@@ -231,6 +233,7 @@ web_driver <- R6::R6Class("web_driver",
                                 stop("Invalid category. To see categories use [web-driver]$dr or .$tv2 to explore list./n Available categories are: ", paste(names(self$tv2), collapse = ", "))
                               }
                               self$outlet = "tv2"
+                              self$topic = category
                               self$go_to_url(self$tv2[[category]])
 
                               if (isTRUE(handle_cookie)) {
@@ -451,48 +454,42 @@ web_driver <- R6::R6Class("web_driver",
                             #' Set 'Show More' Button
                             #'
                             #' Manually sets the 'Show More' button's class or ID if it cannot be automatically located.
-                            #' @param class_ The class of the 'Show More' button.
-                            #' @param id The ID of the 'Show More' button.
+                            #' @param attr_type Str value of either 'class' or 'id'.
+                            #' @param attr_value char string used to query html for button.
                             #' @return None, but updates the internal fields for the 'Show More' button.
-                            set_show_more_button = function(class_ = NULL, id = NULL) {
+                            set_show_more_button = function(attr_type = NULL, attr_value = NULL) {
 
                               # Check if class_ and id are provided
-                              if (is.null(class_) & is.null(id)) {
-                                stop("Must provide either class or id/n If not then use locate_show_more_button")
+                              if (is.null(attr_type) || is.null(attr_value)) {
+                                stop("Must provide both attri_type ('class' or 'id') and attr_value (char string used to query html for button).\n\nIf not then use locate_show_more_button")
                               }
 
-                              # Check if class_ and id are provided
-                              if (!is.null(class_)) {
-                                # click button with suggested class
-                                eval_click = click_button(remDr = self$client, button_class = class_)
-
-                                # Check if eval_click is TRUE
-                                if (isTRUE(eval_click)) {
-                                  # set self$show_more_button to TRUE and store class
-                                  self$show_more_class = class_
-                                  self$show_more_lgl = TRUE
-                                } else {
-                                  self$show_more_lgl = FALSE
-                                  print("Could not find show more button with suggested class")
-                                  return()
-                                }
+                              # Validate attr_type
+                              if (attr_type != "class" & attr_type != "id") {
+                                stop("attr_type must be either 'class' or 'id'")
                               }
 
-                              if (is.null(id)) {
-                                # click button with suggested class
-                                eval_click = click_button(remDr = self$client, button_id = id)
-
-                                # Check if eval_click is TRUE
-                                if (isTRUE(eval_click)) {
-                                  # set self$show_more_button to TRUE and store id
-                                  self$show_more_id = id
-                                  self$show_more_lgl = TRUE
-                                } else {
-                                  self$show_more_lgl = FALSE
-                                  print("Could not find show more button with suggested id")
-                                  return()
-                                }
+                              if (grepl("class", attr_type)) {
+                                attr_type = "class name"
                               }
+
+                              if (grepl("id", attr_type)) {
+                                attr_type = "id"
+                              }
+
+                              evaluate_button = query_show_more_button(remDr = self$client, query_pattern = attr_value, query_attr = attr_type)
+
+                              # Check if evaluate_button is TRUE
+                              if (isTRUE(evaluate_button$click)) {
+                                # set self$show_more_button to TRUE and store class
+                                self$show_more_class = class_
+                                self$show_more_lgl = TRUE
+                              } else {
+                                self$show_more_lgl = FALSE
+                                print("Could not find show more button from user input")
+                                return()
+                              }
+
                             },
 
                             #' @description
@@ -500,8 +497,10 @@ web_driver <- R6::R6Class("web_driver",
                             #'
                             #' Scrapes news articles from a specified news outlet and filters them based on a cutoff date.
                             #' @param last_update Date (in 'YYYY-MM-DD' format) indicating when the news outlet was last crawled; used as a cutoff for new articles.
+                            #' @param verbose_ Logical indicating whether to print messages to the console.
+                            #' @param debug_ Logical indicating whether to return additional object for debuging purposes
                             #' @return A data frame with metadata and URLs of news articles that meet the criteria.
-                            get_news_articles = function(last_update = NULL) {
+                            get_news_articles = function(last_update = NULL, verbose_ = FALSE, debug_ = FALSE) {
 
                               # Check if last_update is NULL or a date
                               # if it is NULL cut_off_date is set to 14 days ago
@@ -527,78 +526,17 @@ web_driver <- R6::R6Class("web_driver",
                                 # get page source
                                 self$get_html()
 
-                                dr_source = self$page_source
+                                # Get news elements
+                                dr_news_elements <- get_news_elements_DR(page_source = self$page_source)
 
-                                # get news elements
-                                dr_news_elements = get_news_elements(outlet = 'dr', page_source = dr_source)
+                                # Extract and format dates for each news element
+                                news_article_dates <- extract_and_format_dates_DR(list_of_elements = dr_news_elements)
 
-                                # retrieve and format date from news elements to filter out previouse crawled articles
-                                full_date_list = unlist(lapply(dr_news_elements, function(x) {
-                                  date_list = x %>%
-                                    rvest::html_elements(css = "div>span>span>span[class *= 'dre-teaser-meta__part']") %>%
-                                    rvest::html_text()
+                                # Filter out articles older than cut_off_date
+                                filtered_elements <- dr_news_elements[news_article_dates >= cut_off_date & !is.na(news_article_dates)]
 
-                                  if (length(date_list) == 2) {
-                                    dr_date = date_list[2]
-                                  } else {
-                                    if (grepl("\\d", date_list[1])) {
-                                      dr_date = date_list[1]
-                                    } else {
-                                      dr_date = ""
-                                    }
-                                  }
-
-                                  dr_date = format_date_from_time(dr_date)
-
-                                }))
-
-                                # filter out articles that are older than cut_off_date
-                                dr_news_elements = dr_news_elements[full_date_list >= cut_off_date & !is.na(full_date_list)]
-
-                                # retrieve news items from elements
-                                dr_news_list = lapply(dr_news_elements, function(x) {
-                                  dr_url = x %>%
-                                    rvest::html_elements("a") %>%
-                                    rvest::html_attr("href")
-
-                                  dr_url = x %>%
-                                    rvest::html_elements(css = "div>a[class *= 'dre-teaser-title']") %>%
-                                    rvest::html_attr("href")
-
-                                  # dr - headline
-                                  dr_headline = x %>%
-                                    rvest::html_elements(css = "a>span>span[class *= 'dre-title-text']") %>%
-                                    rvest::html_text()
-
-                                  # dr - topic
-                                  dr_topic = x %>%
-                                    rvest::html_elements(css = "div>span>span>span[class *= 'dre-teaser-meta__part--primary']") %>%
-                                    rvest::html_text()
-
-                                  # dr - date
-                                  dr_date_list = x %>%
-                                    rvest::html_elements(css = "div>span>span>span[class *= 'dre-teaser-meta__part']") %>%
-                                    rvest::html_text()
-
-
-                                  if (length(dr_date_list) == 2) {
-                                    dr_date = dr_date_list[2]
-                                  } else {
-                                    if (grepl("\\d", dr_date_list[1])) {
-                                      dr_date = dr_date_list[1]
-                                    } else {
-                                      dr_date = ""
-                                    }
-                                  }
-
-                                  dr_date = format_date_from_time(dr_date)
-
-                                  dr_news_list = list('url' = if (length(dr_url) == 0) NA else dr_url,
-                                                      'headline' = if (length(dr_headline) == 0) NA else dr_headline,
-                                                      'topic' = if (length(dr_topic) == 0) NA else dr_topic,
-                                                      'date' = dr_date)
-                                })
-
+                                # Process filtered news elements into a structured list
+                                dr_news_list <- process_news_elements_DR(html_elements = filtered_elements)
                                 # convert list to data frame
                                 dr_news_df = dplyr::bind_rows(dr_news_list)
 
@@ -613,203 +551,293 @@ web_driver <- R6::R6Class("web_driver",
                               # if outlet is tv2 prompt user for a category
                               if (self$outlet == 'tv2') {
 
-                                # set tv2_source to page_source
-                                tv2_source = self$get_html(do_return = TRUE)
+                                # Get page html
+                                self$get_html()
 
                                 # get news elements
-                                tv2_news_elements = get_news_elements(outlet = 'tv2', page_source = tv2_source )
+                                tv2_news_elements = get_news_elements_TV2(page_source = self$page_source)
 
-                                # retrieve and format date from news elements to filter out previous crawled articles
-                                full_date_list = unlist(lapply(tv2_news_elements, function(x) {
-                                  # tv2 - url
-                                  tv2_date = x %>%
-                                    rvest::html_elements(css = "a[class *= 'tc_teaser__link']") %>%
-                                    rvest::html_attr("href") %>%
-                                    grab_date_from_url(.)
+                                # Extract and format dates for each news element
+                                news_article_dates <- extract_and_format_dates_TV2(list_of_elements = tv2_news_elements)
 
-                                  # if NA then set date to current date YYYY-MM-DD
-                                  # This handles cases from tv2 play, where the date is not present in the html or URL
-                                  if (is.na(tv2_date)) {
-                                    tv2_date = as.character(Sys.Date()) # Messy way to enforce a consistent format for dates
-                                  }
+                                # Create table of dates
+                                count_table = table(news_article_dates)
 
-                                  return(tv2_date)
+                                if (isTRUE(verbose_)) {
+                                  message("Number of articles per date:\n")
+                                  print(count_table)
+                                  print(news_article_dates)
+                                }
 
-                                }))
+                                # Evaluate condition for while loop
+                                while_loop_condition <- simple_count_comparison(count_table = count_table, target_date = cut_off_date, count_tolerance = 1, time_window = 3)
 
-                                # print full_date_list as vector - debugging purposes
-                                # print(full_date_list)
-                                # print(min(full_date_list))
+                                # if verbose_ is TRUE then print while loop condition to user
+                                if (isTRUE(verbose_)) {
+                                  message("While loop condition: ", while_loop_condition)
+                                  print(count_table)
+                                }
 
-                                # if cut-off date is before the earliest article, then click show more button and re-evaluate
-                                if (min(full_date_list) > cut_off_date) {
+                                # Start list for count tables
+                                historical_counts = list(count_table)
 
-                                  # Set date condition for while loop
-                                  date_condition = min(full_date_list) > cut_off_date
+                                # while-loop counter
+                                counter = 0
 
-                                  # while-loop counter
-                                  counter = 0
+                                # Set seq for when to do stuff and message user
+                                every_third_seq = seq(0, 40, by = 3)
 
-                                  # while earliest article is before cut-off date keep clicking show more button
-                                  while (date_condition) {
+                                # Set random seq for other actions
+                                random_seq = sample(1:30, 25, replace = FALSE)
+                                random_seq_b = sample(1:30, 20, replace = FALSE)
 
-                                    # increment counter
-                                    counter = counter + 1
+                                message("Now working on getting news items according to last update")
 
-                                    # if show more button is not set, then locate it
-                                    if (is.null(self$show_more_lgl)) {
+                                # while earliest article is before cut-off date keep clicking show more button
+                                while (while_loop_condition) {
 
-                                      # locate show more button
-                                      self$locate_show_more_button()
+                                  # if show more button is not set, then locate it
+                                  if (is.null(self$show_more_lgl)) {
+
+                                    # locate show more button
+                                    self$locate_show_more_button()
 
                                     # if show more button is set, then click it
-                                    } else if (isTRUE(self$show_more_lgl)) {
+                                  } else if (isTRUE(self$show_more_lgl)) {
 
-                                      for (i in 1:2) {
-                                        # Scroll down to 300 pixels
-                                        self$client$executeScript("window.scrollTo(0,300)")
+                                    # Scroll down to 300 pixels
+                                    self$client$executeScript("window.scrollTo(0,300)")
 
-                                        if (counter == 4) {
-                                          # refresh page
-                                          self$client$refresh()
-                                        }
+                                    # if counter is  3 then sleep for .2 seconds, engage the page and increase RSelenium implicit waits
+                                    if (counter %in% c(5, 10, 15, 20, 30)) {
 
-                                        # if counter is greater than 3 then sleep for 2 seconds and engage the page
-                                        if (counter == 3) {
-                                          div_load = self$client$findElement(using = 'css selector', value = "div[class *= 'tc_load']")
-                                          if (!is.null(div_load)) {
-                                            Sys.sleep(.2)
-                                            div_load$clickElement()
-                                          }
+                                      # if counter is 5 then increase implicit wait to 4 seconds
+                                      if (counter == 5) {
+                                        # Set increased implicit wait
+                                        implicit_wait = 4000
+                                      } else {
+                                        # increase implicit wait by 1-2 seconds
+                                        implicit_wait = implicit_wait + runif(1, 1200, 2020)
+                                      }
 
-                                          Sys.sleep(2)
+                                      # set implicit timeouts to 5 seconds respectively
+                                      self$client$setTimeout(type = "implicit", milliseconds = implicit_wait)
+                                      div_load = self$client$findElement(using = 'css selector', value = "div[class *= 'tc_load']")
+                                      if (!is.null(div_load)) {
+                                        Sys.sleep(.2)
+                                        div_load$clickElement()
+                                      }
 
-                                          # Scroll down to 600 pixels
-                                          self$client$executeScript("window.scrollTo(0,600)")
-                                        }
+                                      Sys.sleep(2)
 
-                                        # if show more button is set by class then locate it
-                                        if (!is.null(self$show_more_class)) {
+                                      # Scroll down to 600 pixels
+                                      self$client$executeScript("window.scrollTo(0,600)")
+                                    }
 
-                                          # locate show more button and click it
-                                          view_more_button = suppressMessages(query_page_for_button(remDr = self$client, query_pattern = self$show_more_class, query_attr = "class"))
-                                          # if counter is greater than 3 then sleep for 2 seconds and engage the page
-                                          if (counter > 4) {
-                                            Sys.sleep(1)
-                                            element <- self$client$findElement(using = 'css', value = paste0("button[class *= '",self$show_more_class,"']" ))
-                                            Sys.sleep(runif(1, .1, .2))
-                                            element$getElementLocationInView()
-                                            Sys.sleep(runif(1, .1, .2))
-                                            self$client$mouseMoveToLocation(webElement = element)
-                                            # Sys.sleep(runif(1, .1, .2))
-                                            # self$client$executeScript("arguments[0].click();", list(element))
-                                          }
+                                    # if counter is 4, 7 or 10 then pause for 6-10 seconds
+                                    if (counter %in% random_seq) {
+                                      pause = runif(1, 8, 14)
+                                      if (isTRUE(verbose_)) {
+                                        message(paste0("Pausing for ", pause, " seconds.\nHoping that the page will load."))
+                                      }
+                                      Sys.sleep(pause)
+                                    }
 
-                                        # if show more button is set by class then locate it
-                                        } else if (!is.null(self$show_more_id)) {
+                                    # if show more button is set by class then locate it
+                                    if (!is.null(self$show_more_class)) {
 
-                                          # locate show more button and click it
-                                          view_more_button = suppressMessages(query_page_for_button(remDr = self$client, query_pattern = self$show_more_id, query_attr = "id"))
+                                      # if verbose is TRUE then print message
+                                      if (isTRUE(verbose_)) {
+                                        # locate show more button and click it
+                                        view_more_button = query_page_for_button(remDr = self$client, query_pattern = self$show_more_class, query_attr = "class")
+                                      } else {
+                                        # locate show more button and click it
+                                        view_more_button = suppressMessages(query_page_for_button(remDr = self$client, query_pattern = self$show_more_class, query_attr = "class"))
+                                      }
 
-                                          # if counter is greater than 3 then sleep for 2 seconds and engage the page
-                                          if (counter > 4) {
-                                            Sys.sleep(1)
-                                            element <- self$client$findElement(using = 'css', value = paste0("button[class *= '",self$show_more_class,"']" ))
-                                            Sys.sleep(runif(1, .1, .2))
-                                            element$getElementLocationInView()
-                                            Sys.sleep(runif(1, .1, .2))
-                                            self$client$mouseMoveToLocation(webElement = element)
-                                            # Sys.sleep(runif(1, .1, .2))
-                                            # self$client$executeScript("arguments[0].click();", list(element))
-                                          }
-                                        } else {
-                                          stop("No show more button found/n Please specify show more button class or id using set_show_more_button()")
-                                        }
+                                      # if show more button is set by class then locate it
+                                    } else if (!is.null(self$show_more_id)) {
+
+                                      # if verbose is TRUE then print message
+                                      if (isTRUE(verbose_)) {
+                                        # locate show more button and click it
+                                        view_more_button = query_page_for_button(remDr = self$client, query_pattern = self$show_more_id, query_attr = "id")
+                                      } else {
+                                        # locate show more button and click it
+                                        view_more_button = suppressMessages(query_page_for_button(remDr = self$client, query_pattern = self$show_more_id, query_attr = "id"))
                                       }
                                     }
+
+                                    # if counter is greater than 3 then sleep for 2 seconds and engage the page
+                                    if (counter %in% random_seq_b) {
+                                      if(isTRUE(verbose_)) {
+                                        message("Doing some stuff")
+                                      }
+                                      Sys.sleep(runif(1, .1, .2))
+                                      element <- tryCatch(self$client$findElement(using = 'css', value = paste0("button[class *= '",self$show_more_class,"']" )), error = function(e) e )
+
+                                      if (!is.null(element) && inherits(element, "try-error")) {
+                                        Sys.sleep(runif(1, .1, .2))
+                                        element$getElementLocationInView()
+                                        Sys.sleep(runif(1, .1, .2))
+                                        self$client$mouseMoveToLocation(webElement = element)
+                                      }
+                                    }
+
+                                  } else {
+                                    stop("No show more button found/n Please specify show more button class or id using set_show_more_button()")
+                                  }
+
+                                  if (isTRUE(verbose_)) {
+                                    message("Evaluating dates")
+                                  }
+
+                                  # if counter is 2, 4, 5, 7 or 9 then hit page down 4-10 times
+                                  if (counter %in% every_third_seq) {
 
                                     ## Scroll to current bottom
                                     page_element = self$client$findElement(using = 'css selector', value = "body")
-                                    page_element$sendKeysToElement(list(key = "end"))
-                                    page_element$sendKeysToElement(list(key = "down_arrow"))
 
-                                    Sys.sleep(runif(1, .2, .4))
+                                    # Set random number of page down hits between 4 and 10
+                                    number_of_down_arrows = round(runif(1, 8, runif(1, 9, 12)))
 
-                                    # get html
-                                    self$get_html()
+                                    message(paste0("Hitting page_down ", number_of_down_arrows, " times\nWish me luck! Let's hope we have better luck in next iteration..."))
 
-                                    # get news elements
-                                    tv2_news_elements = get_news_elements(outlet = 'tv2', page_source = self$page_source)
-
-                                    # update dates
-                                    full_date_list = unlist(lapply(tv2_news_elements, function(x) {
-
-                                      # tv2 - url
-                                      tv2_date = x %>%
-                                        rvest::html_elements(css = "a[class *= 'tc_teaser__link']") %>%
-                                        rvest::html_attr("href")
-
-                                      tv2_date = tv2_date %>%
-                                        grab_date_from_url(.)
-
-                                      # if NA then set date to current date YYYY-MM-DD
-                                      if (is.na(tv2_date)) {
-                                        tv2_date = as.character(Sys.Date()) # Messy way to enforce a consistent format for dates
-                                      }
-
-                                      return(tv2_date)
-
-                                    }))
-
-                                    # print full_date_list as vector
-                                    #print(min(full_date_list))
-
-                                    # Message user about dates if counter is 4
-                                    if (counter %in% c(3,5,7,9)) {
-                                      message("Still working on getting news items according to cut-off date\n",paste0("Current earliest article date: ", min(full_date_list), "\nCut-off date: ", cut_off_date))
+                                    # hit page down
+                                    for (i in 1:number_of_down_arrows) {
+                                      page_element$sendKeysToElement(list(key = "page_down"))
+                                      Sys.sleep(runif(1, .1, .26))
                                     }
-
-
-                                    # check if cut-off date is before the earliest article
-                                    date_condition = min(full_date_list) > cut_off_date
                                   }
+
+                                  # Sleep for 1-3 seconds
+                                  Sys.sleep(runif(1, 2, 3.5))
+
+                                  # get html
+                                  self$get_html()
+
+                                  # get news elements
+                                  tv2_news_elements = get_news_elements_TV2(page_source = self$page_source)
+
+                                  # update list of dates for all available news elements
+                                  news_article_dates <- extract_and_format_dates_TV2(list_of_elements = tv2_news_elements)
+
+                                  # Create table of dates
+                                  count_table = table(news_article_dates)
+
+                                  # if not first iteration, then add count table to historical count table list
+                                  if (counter > 1) {
+                                    historical_counts = c(historical_counts, list(count_table))
+                                  }
+
+                                  # Get current date
+                                  today = Sys.Date()
+
+                                  # Calculate days since cut_off_date
+                                  days_since_cut = today - as.Date(cut_off_date)
+
+                                  # When the iteration reaches five iterations plus the number of days from today until cut off date,
+                                  # the cut off date is adjusted to the nearest date in the count table
+                                  if ((days_since_cut + 5) == counter ) {
+
+                                    # adjust cut off date to the nearest preceding date in the count table
+                                    cut_off_date = names(count_table)[which.min(abs(as.Date(names(count_table)) - as.Date(cut_off_date)))]
+                                    # if verbose is set to TRUE then print message
+                                    if (isTRUE(verbose_)) {
+                                      message("Cut off date adjusted to: ", cut_off_date)
+                                    }
+                                  }
+
+                                  # Evaluate condition for while loop (negate for while loop)
+                                  while_loop_condition <- !historical_count_comparison(historical_count_tables = historical_counts,
+                                                                                      current_count_table = count_table,
+                                                                                      target_date = cut_off_date,
+                                                                                      count_tolerance = 1,
+                                                                                      iteration_tolerance = 1,
+                                                                                      time_window = 3
+                                                                                      )
+
+                                  # Message user about dates if counter is 4
+                                  if (counter %in% every_third_seq && isTRUE(verbose_)) {
+                                    message("While loop condition: ", while_loop_condition)
+                                    message("Still working on getting news items according to cut-off date\nCurrent article count per date:\n")
+                                    print(count_table)
+                                    print(counter)
+                                  }
+
+                                  # increment counter
+                                  counter = counter + 1
+
                                 }
 
                                 # # filter out articles that are older than cut_off_date
-                                # tv2_news_elements = tv2_news_elements[full_date_list >= cut_off_date]
+                                tv2_news_elements = tv2_news_elements[as.Date(news_article_dates) >= as.Date(cut_off_date)]
 
-                                # get relevant news items
-                                tv2_news_list = lapply(tv2_news_elements, function(x) {
-                                  # tv2 - url
-                                  tv2_url = x %>%
-                                    rvest::html_elements(css = "a[class *= 'tc_teaser__link']") %>%
-                                    rvest::html_attr("href")
-
-                                  # tv2 - headline
-                                  tv2_headline = x %>%
-                                    rvest::html_elements(css = "[class *= 'tc_heading']") %>%
-                                    rvest::html_text()
-
-                                  # tv2 - topic
-                                  tv2_topic = x %>%
-                                    rvest::html_elements(css = "span[class *= 'tc_label--color-nyheder']") %>%
-                                    rvest::html_text()
-
-                                  # tv2 - date
-                                  tv2_date = grab_date_from_url(tv2_url)
-
-                                  tv2_news_list = list(url = if (length(tv2_url) == 0) NA else tv2_url,
-                                                       headline = if (length(tv2_headline) == 0) NA else tv2_headline,
-                                                       topic = if (length(tv2_topic) == 0) NA else tv2_topic,
-                                                       date = tv2_date)
-                                })
+                                # Process news elements
+                                tv2_news_list = process_news_elements_TV2(html_elements = tv2_news_elements)
 
                                 # convert to data frame
                                 tv2_news_df = dplyr::bind_rows(tv2_news_list)
 
-                                # return data frame
-                                return(tv2_news_df)
+                                if(isTRUE(debug_)) {
+                                  return(list(historical_counts,
+                                              count_table,
+                                              tv2_news_elements,
+                                              tv2_news_df))
+                                } else {
+                                  # return data frame
+                                  return(tv2_news_df)
+                                }
                               }
                             }
                           )
 )
+
+
+# Script for debugging purposes - removed from while-loop in tv2
+# if (is.na(while_loop_condition) || length(while_loop_condition) == 0 || counter > 10) {
+#   # Function to calculate the average count within a date range
+#   calculate_average <- function(count_table, range, today) {
+#     relevant_dates <- names(count_table)[which(abs(as.Date(names(count_table)) - today) <= range)]
+#     output = round(mean(count_table[relevant_dates], na.rm = TRUE))
+#     return(output)
+#   }
+#
+#   # Check if focus_date is present in current_counts
+#   date_in_current <- as.character(cut_off_date) %in% names(count_table)
+#
+#   # Today's date
+#   today <- Sys.Date()
+#
+#   # Evaluate conditions
+#   if (date_in_current) {
+#     # Calculate average count for the specified date range
+#     average_count <- calculate_average(count_table, 4, today)
+#
+#     # Retrieve the count for the target date
+#     target_date_count <- count_table[as.character(cut_off_date)]
+#
+#     # Check if the deviation from average is within tolerance
+#     deviation_within_tolerance <- abs(target_date_count - average_count) <= 1
+#   } else {
+#     deviation_within_tolerance <- FALSE
+#   }
+#   message("Deviation within tolerance: ", deviation_within_tolerance)
+#
+#   # Check historical presence and stability of focus date
+#   historical_presence <- sapply(historical_counts, function(table) as.character(cut_off_date) %in% names(table), USE.NAMES = FALSE)
+#   historical_instances <- which(historical_presence)
+#
+#   print(historical_presence)
+#   print(historical_instances)
+#
+#   # Check if focus date was stable over more than four historical counts
+#   stable_for_four_counts <- FALSE
+#   if (length(historical_instances) > 4) {
+#     date_counts <- sapply(historical_counts[historical_instances], function(table) table[as.character(cut_off_date)], USE.NAMES = FALSE)
+#     stable_for_four_counts <- all(abs(diff(date_counts)) <= 1)
+#   }
+#
+#   message("Stable for four counts: ", stable_for_four_counts)
+#
+# }

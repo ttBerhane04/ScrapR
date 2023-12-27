@@ -7,18 +7,28 @@
 #' @param last_crawl A Date object or string specifying the date of the last crawl (optional).
 #' @param headless_browsing Logical indicating if the browsing should be headless. Default is TRUE.
 #' @param handle_cookie_prompt Logical indicating if the cookie prompt should be automatically handled. Default is TRUE.
-#'
+#' @param verbose Logical indicating whether to print messages to the console.
+#' @param debug_output Logical indicating whether to return additional object for debuging purposes
 #' @return A data frame of news items retrieved from the specified news outlet and topic.
 #'
 #' @examples
-#' '''
+#' \dontrun{
 #' news_items <- retrieve_news_items("dr", "politik", Sys.Date() - 7)
 #' news_items <- retrieve_news_items("tv2", "klima", last_crawl = "2023-01-01", headless_browsing = FALSE)
-#' '''
-#' @importFrom web_driver web_driver
+#' }
+#' @importFrom magrittr %>%
 #' @export
 #'
-retrieve_news_items = function(news_outlet, topic, last_crawl = NULL, headless_browsing = NULL, handle_cookie_prompt = TRUE) {
+retrieve_news_items = function(news_outlet,
+                               topic,
+                               last_crawl = NULL,
+                               headless_browsing = NULL,
+                               handle_cookie_prompt = TRUE,
+                               verbose = FALSE,
+                               debug_output = FALSE) {
+
+  # Make sure magrittr is loaded
+  requireNamespace("magrittr", quietly = TRUE)
 
   # Set headless
   headless_browsing <- ifelse(is.null(headless_browsing), TRUE, headless_browsing)
@@ -59,7 +69,7 @@ retrieve_news_items = function(news_outlet, topic, last_crawl = NULL, headless_b
   }
 
   # Get news articles
-  news_items = remote_browser$get_news_articles(last_update = last_crawl)
+  news_items = remote_browser$get_news_articles(last_update = last_crawl, verbose_ = verbose, debug_ = debug_output)
 
   # Quit RSelenium
   remote_browser$quit_RSelenium()

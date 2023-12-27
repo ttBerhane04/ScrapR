@@ -25,5 +25,4 @@ format_date_from_time("I går") # returns yesterday's date in 'YYYY-MM-DD'
 format_date_from_time("5. jun") # returns 'current year-06-05'
 format_date_from_time("Invalid Date") # returns NA
 }
-
 }

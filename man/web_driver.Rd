@@ -48,6 +48,8 @@ remote_browser$quit_RSelenium()
 
 \item{\code{outlet}}{Current news outlet being scraped.}
 
+\item{\code{topic}}{Current topic being scraped.}
+
 \item{\code{url_}}{Current URL navigated to.}
 
 \item{\code{page_source}}{HTML source of the current page.}
@@ -281,15 +283,15 @@ Set 'Show More' Button
 
 Manually sets the 'Show More' button's class or ID if it cannot be automatically located.
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{web_driver$set_show_more_button(class_ = NULL, id = NULL)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{web_driver$set_show_more_button(attr_type = NULL, attr_value = NULL)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{class_}}{The class of the 'Show More' button.}
+\item{\code{attr_type}}{Str value of either 'class' or 'id'.}
 
-\item{\code{id}}{The ID of the 'Show More' button.}
+\item{\code{attr_value}}{char string used to query html for button.}
 }
 \if{html}{\out{</div>}}
 }
@@ -305,13 +307,21 @@ Get News Articles
 
 Scrapes news articles from a specified news outlet and filters them based on a cutoff date.
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{web_driver$get_news_articles(last_update = NULL)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{web_driver$get_news_articles(
+  last_update = NULL,
+  verbose_ = FALSE,
+  debug_ = FALSE
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{last_update}}{Date (in 'YYYY-MM-DD' format) indicating when the news outlet was last crawled; used as a cutoff for new articles.}
+
+\item{\code{verbose_}}{Logical indicating whether to print messages to the console.}
+
+\item{\code{debug_}}{Logical indicating whether to return additional object for debuging purposes}
 }
 \if{html}{\out{</div>}}
 }

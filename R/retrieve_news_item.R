@@ -4,7 +4,7 @@
 #'
 #' @param news_outlet A string specifying the news outlet, either "dr" or "tv2".
 #' @param topic A string specifying the topic to retrieve news from. Valid topics depend on the news outlet.
-#' @param last_crawl A Date object or string specifying the date of the last crawl (optional).
+#' @param last_crawl A Date object or string specifying the date of the last crawl to set a cut-off date for how far back to scrape.
 #' @param headless_browsing Logical indicating if the browsing should be headless. Default is TRUE.
 #' @param handle_cookie_prompt Logical indicating if the cookie prompt should be automatically handled. Default is TRUE.
 #' @param verbose Logical indicating whether to print messages to the console.
@@ -13,7 +13,6 @@
 #'
 #' @examples
 #' \dontrun{
-#' news_items <- retrieve_news_items("dr", "politik", Sys.Date() - 7)
 #' news_items <- retrieve_news_items("tv2", "klima", last_crawl = "2023-01-01", headless_browsing = FALSE)
 #' }
 #' @importFrom magrittr %>%

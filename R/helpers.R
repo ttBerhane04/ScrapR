@@ -215,14 +215,15 @@ process_news_elements_DR <- function(html_elements) {
     list(
       url = .x %>% rvest::html_elements("a") %>% rvest::html_attr("href"),
       headline = .x %>% rvest::html_elements(css = "span[class *= 'dre-title-text']") %>% rvest::html_text(),
-      topic = .x %>% rvest::html_elements(css = "span[class *= 'dre-teaser-meta__part--primary']") %>% rvest::html_text()
+      topic = .x %>% rvest::html_elements(css = "span[class *= 'dre-teaser-meta__part--primary']") %>% rvest::html_text(),
+      news_outlet = "dr"
       )
   })
 
   dr_dates = extract_and_format_dates_DR(html_elements)
 
   for (i in 1:length(dr_list)) {
-    dr_list[[i]]$date = dr_dates[i]
+    dr_list[[i]]$publication_date = dr_dates[i]
   }
 
   return(dr_list)
@@ -254,7 +255,8 @@ process_news_elements_TV2 <- function(html_elements) {
       url = url_,
       headline = element %>% rvest::html_elements(css = "[class *= 'tc_heading']") %>% rvest::html_text(),
       topic = element %>% rvest::html_elements(css = "span[class *= 'tc_label--color-nyheder']") %>% rvest::html_text(),
-      date = grab_date_from_url(url_)
+      publication_date = grab_date_from_url(url_),
+      news_outlet = "tv2"
     )
   })
 
